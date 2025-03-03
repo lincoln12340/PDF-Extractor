@@ -328,7 +328,7 @@ if execute_button and uploaded_file and metric_unit:
         # Create a pandas DataFrame from the collected rows
     overall_df = pd.DataFrame(overall_rows)
     st.write("Overall DataFrame:")
-    st.table(overall_df)
+    st.write(overall_df)
     #print(overall_df)
 
 
