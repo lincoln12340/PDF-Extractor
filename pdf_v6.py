@@ -1,339 +1,451 @@
-from openai import OpenAI
-import re
-import time
 import streamlit as st
-import pandas as pd
+import re
+import fitz  # PyMuPDF
+import requests
+import uuid
 import json
+import pandas as pd
+import time
+import io
+from yake import KeywordExtractor
+from sentence_transformers import SentenceTransformer, util
+from transformers import GPT2Tokenizer
+import torch
+import anthropic
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from openai import OpenAI
+from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
+import copy
+import multiprocessing
+
+# Download NLTK data (stopwords and tokenizer)
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('punkt_tab')
 
 api_key = st.secrets["OPENAI_API_KEY"]
 
+client2 = OpenAI(api_key= api_key)
 
+tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
-# OpenAI API Key
-client = OpenAI(api_key=api_key)
+# Load a pre-trained sentence-transformers model for filtering
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
-st.title("📑 AI-Powered Data Extraction")
-st.sidebar.header("Upload and Extract Data")
+def combine_paragraphs(paragraphs):
+    combined_text = "\n".join(paragraphs)
+    return combined_text
 
-def assistant_5(vector_id, metric, unit, value, context):
+def extract_text_within_brackets(text):
+    matches = re.findall(r'\[(.*?)\]', text, re.DOTALL)
+    if matches:
+        extracted_texts = [s.strip().strip('"') for s in matches[0].split('",')]
+        return extracted_texts
+    return []
 
-    assistant5 = client.beta.assistants.create(
-        name="Page Extraction Assistant",
-        instructions=(
-            f"""
-        ## **Task**
-        You are an AI assistant skilled in extracting precise information from documents. Given a metric, its value, unit, and context, your task is to identify the exact page number where this information appears in the document.
+def process_chunks(text):
+    words = word_tokenize(text)
+    stop_words = set(stopwords.words('english'))
+    filtered_words = [word for word in words if word.lower() not in stop_words and word.isalpha()]
+    return " ".join(filtered_words)
 
-        ## **Input**
-        - **Metric:** {metric}  
-        - **Value:** {unit}  
-        - **Unit:** {value}
-        - **Context:**  {context}
-        
+def preprocess_text_file(txt_file):
+    with open(txt_file, "r", encoding="utf-8") as file:
+        text = file.read()
+    words = word_tokenize(text)
+    stop_words = set(stopwords.words("english"))
+    filtered_words = [word for word in words if word.lower() not in stop_words and word.isalpha()]
+    return " ".join(filtered_words)
 
-        ## **Instructions**
-        1. Search through the document and locate the exact page number where this information appears.  
-        2. If multiple pages contain relevant information, list all page numbers.  
-        3. Provide a **confidence score (0-100%)** for the accuracy of the page number retrieval. 
-        """
-        """
-        ## Mandatory JSON Output Format
+def preprocess_text(pdf_file):
+    def extract_text_from_pdf(pdf_file2):
+        doc = fitz.open(stream=pdf_file2.read(), filetype="pdf")
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        return text
+    text = extract_text_from_pdf(pdf_file)
+    words = word_tokenize(text)
+    stop_words = set(stopwords.words('english'))
+    filtered_words = [word for word in words if word.lower() not in stop_words and word.isalpha()]
+    return " ".join(filtered_words)
 
-        ```json
-        {
-            "page_table": [
-                {
-                                     
-                    "Page Number(s)": ""
-                    "Confidence Score":""
-                }
-            ]
-        }
-        """
-        ),
-        model="gpt-4o",
-        tools=[{"type": "file_search"}],
-        tool_resources={"file_search": {"vector_store_ids": [vector_id]}},
-    )
-
-    return assistant5
-
-def assistant_4(vector_id, metric, unit, value,timeline):
-    assistant4 = client.beta.assistants.create(
-        name="Metric Extraction Assistant",
-        instructions=(
-            f"""
-        # AI Instructions for Extracting 1 Metric from a Document
-        Search the document for the phrase {metric} along with the value {value} {unit} and the year {timeline}, and return the corresponding context.
-
-        """
-        """
-        ## Mandatory JSON Output Format
-
-        ```json
-        {
-            "context_table": [
-                {
-                                     
-                    "Context": " "
-                }
-            ]
-        }
-        """
-        ),
-        model="gpt-4o-mini",
-        tools=[{"type": "file_search"}],
-        tool_resources={"file_search": {"vector_store_ids": [vector_id]}},
-    )
-    return assistant4
-
-# ✅ Create Vector Store
-
-    #st.success(f"✅ Vector Store Created with ID: {new_vector_store_id}")
-
-def chatgpt_assistant(prompt, assistant_id):
+def extra_pdf_chunks(assistant_id):
+    text = f"Extract all relevant paragraphs"
     try:
-        thread = client.beta.threads.create()
+        thread = client2.beta.threads.create()
         thread_id = thread.id
-        client.beta.threads.messages.create(thread_id=thread_id, role="user", content=prompt)
-        run = client.beta.threads.runs.create(
+        client2.beta.threads.messages.create(thread_id=thread_id, role="user", content=text)
+        run = client2.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=assistant_id,
-            temperature=0.01,  # Add temperature parameter
-            top_p=1           # Add top_p parameter
+            temperature=1
         )
-
-        #progress_bar = st.progress(0)
-        #status_text = st.empty()
-
         while True:
-            run_status = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            run_status = client2.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
             if run_status.status == "completed":
-                #progress_bar.progress(100)
-                #status_text.success("✅ Extraction Complete!")
                 break
             time.sleep(2)
-            #progress_bar.progress(50)
-            #status_text.text("⏳ Extracting data...")
-
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        messages = client2.beta.threads.messages.list(thread_id=thread_id)
         return messages.data[0].content[0].text.value.strip()
     except Exception as e:
         return f"Error: {str(e)}"
 
-def upload_file_to_openai(file_path):
-    """
-    Uploads a file to OpenAI and stores it in the specified vector store.
-    Returns the file ID.
-    """
+def extra_pdf_keywords(assistant_id, text):
+    text = f"Analyse the text and extract the relevant keywords: {text}"
     try:
-        with st.spinner("Uploading file..."):
-            file = client.files.create(
-                file=open(file_path, "rb"),
-                purpose="assistants"
-            )
-            file_id = file.id
-           
-            #st.success(f"✅ File Uploaded: {file_id}")
-            return file_id
-    except Exception as e:
-        st.error(f"❌ Error Uploading File: {str(e)}")
-        return None
-
-def upload_file_vector(file_id):
-    with st.spinner("Adding file to Vector Store..."):
-        client.beta.vector_stores.files.create(
-            vector_store_id=new_vector_store_id,
-            file_id=file_id
-    
+        thread = client2.beta.threads.create()
+        thread_id = thread.id
+        client2.beta.threads.messages.create(thread_id=thread_id, role="user", content=text)
+        run = client2.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=assistant_id,
+            temperature=1
         )
-        #st.success(f"✅ File {file_id} Added to Vector Store {new_vector_store_id}")
+        while True:
+            run_status = client2.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            if run_status.status == "completed":
+                break
+            time.sleep(2)
+        messages = client2.beta.threads.messages.list(thread_id=thread_id)
+        return messages.data[0].content[0].text.value.strip()
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-def extract_json_from_output(output):
-    """
-    Extracts JSON content from a given output string.
-
-    Args:
-    - output (str): The string containing the JSON content within triple backticks.
-
-    Returns:
-    - dict: The parsed JSON content as a Python dictionary.
-    """
-    # Regular expression to find JSON content within triple backticks
-    json_match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
-
-    if json_match:
-        json_content = json_match.group(1).strip()
-        try:
-            # Parse the JSON content
-            json_data = json.loads(json_content)
-            return json_data
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON: {e}")
-            return None
-    else:
-        print("No JSON content found.")
-        return None
-
-# ✅ Define Assistants
-
-def assistant_1(vector_id, metric, unit,timeline):
-
-    assistant = client.beta.assistants.create(
-        name="Data Extraction Assistant",
-        instructions=(
-            f"""**Objective:**
-Extract {metric} specifically in the unit {unit}."
-
-
----
-
-## 📌 Extraction Instructions:
-1. **Extract the 1 Metric without exception:**
-   - Ensure the {metric} is included in the output even if no value is found.
-2. **Identify and Extract Values:**
-   - Locate all instances of the metric and extract their corresponding numerical values.
-3. **Recognize Units:**
-   - Extract the unit mentioned alongside each value; if it differs from {unit}, record it as presented.
-4. **Determine Time Period:**
-   - Extract any mention of the relevant time frame, focusing on the year {timeline}.
-5. **Handle Variations:**
-   - Account for abbreviations, alternative units, and different formatting styles (e.g., decimals, percentages, or written numbers).
-
----
-"""
-""" ## 📊 Mandatory JSON Output Format:
-
-```json
-{
-  "metrics_table": [
-    {"Metric": "{metric}", "Value": "", "Unit": "{unit}", "Time Period": {timeline}}
-  ]
-}
-
-"""
-        ),
-        model="gpt-4o-mini",
+def assistant2(vector_id, metric):
+    instructions = f"""Extract all the chunks of text within the document in large paragraphs (512 seq length) that best answer the specified metric.:  
+    Metric: {metric}
+    OUTPUT FORMAT: Return results as a valid array of strings, with each paragraph as a separate element:
+    "paragraph1", "paragraph2", "paragraph3", ...
+    Think broadly about this topic to capture all relevant information, always return information"""
+    assistant2 = client2.beta.assistants.create(
+        name="Metric Extraction Assistant",
+        instructions=instructions,
+        temperature=2,
+        top_p=0.33,
+        model="gpt-4o",
         tools=[{"type": "file_search"}],
         tool_resources={"file_search": {"vector_store_ids": [vector_id]}},
     )
+    return assistant2
 
-    return assistant
+def assistant(vector_id, metric, description):
+    instructions = f""" 
+    ESG SPECIALIST KEYWORD EXTRACTION SYSTEM INSTRUCTION
+    As an ESG specialist, analyze only the provided text to generate comprehensive keyword lists for data extraction of the specified metric along with its description, following these strict guidelines:
+    Metric: {metric}
+    Description: {description}
+    1. EXTRACT ONLY WORDS THAT APPEAR VERBATIM in the provided text
+    2. DO NOT include words from the metric ({metric}) and description ({description}) title itself in your extraction
+    3. PRESENT RESULTS as a single array containing all keywords
+    4. FOCUS EXCLUSIVELY on the provided content, with no external knowledge
+    5. If none found in provided text then output "no matching keywords"
+    LOOK FOR THESE CATEGORIES, BUT OUTPUT ALL FINDINGS IN A SINGLE ARRAY:
+    * EXACT TERMINOLOGY (phrases and technical terms)
+    * TECHNICAL ABBREVIATIONS AND NOTATION
+    * SYNONYMS AND ALTERNATIVES
+    * COMPONENT KEYWORDS
+    * CONTEXTUAL INDICATORS (including headers)
+    * LAYMAN TERMINOLOGY (simplified and non-technical terms)
+    OUTPUT FORMAT: ["keyword1", "keyword2", "keyword3", "keyword4", "phrase1", "phrase2", "technical term1", "technical term2", "abbreviation1", "abbreviation2", "notation1", "notation2", "alternative phrase1", "alternative phrase2", "alternative term1", "alternative term2", "indicator1", "indicator2", "header1", "header2", "simplified term1", "simplified term2", "non-technical term1", "non-technical term2"]
+    IMPORTANT VERIFICATION STEPS:
+    * Ensure every single term appears verbatim in the original text
+    * Remove any terms that are part of the metric title
+    * Eliminate any terms not directly from the source text
+    * Verify exact spelling and formatting matches the source text
+    CRITICAL: Extract keywords ONLY from the text provided for analysis. Do not introduce words based on external knowledge or variations not present in the text. Remove ALL sources from the output.
+    """
+    assistant1 = client2.beta.assistants.create(
+        name="Metric Extraction Assistant",
+        instructions=instructions,
+        model="gpt-4.5-preview-2025-02-27",
+        tools=[{"type": "file_search"}],
+        tool_resources={"file_search": {"vector_store_ids": [vector_id]}},
+    )
+    return assistant1
+
+def count_tokens(text):
+    return len(tokenizer.encode(text))
+
+def send_metric(metric: str, unit: str, description: str, time_line, chunks, keywords, metric_id,pdf_name):
+    url = "https://hook.eu2.make.com/uky6zgqw8frbvpejsmlqcv9ujsllvx7l"
+    payload = {
+        "id": str(uuid.uuid4()),
+        "pdf name": pdf_name,
+        "Metric Id": metric_id,
+        "metric": metric,
+        "unit": unit,
+        "description": description,
+        "Time line": time_line,
+        "dict": chunks,
+        "keywords": keywords
+    }
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code == 200:
+        print("Metric sent successfully!")
+    else:
+        print(f"Failed to send metric: {response.status_code}, {response.text}")
+
+def extract_keywords_yake(sentence, num_keywords=10, n=3, dedup_lim=0.9, window_size=3):
+    extractor = KeywordExtractor(
+        n=n,
+        dedupLim=dedup_lim,
+        windowsSize=window_size,
+        top=num_keywords
+    )
+    keywords = extractor.extract_keywords(sentence)
+    return [kw[0] for kw in keywords[:num_keywords]]
+
+def extract_relevant_pages(pdf_content, keywords, chunk_size=2, context_sentences=0):
+    doc = fitz.open(stream=pdf_content, filetype="pdf")
+    relevant_pages = {}
+    keywords = [kw.lower() for kw in keywords]
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        text = page.get_text("text")
+        if any(kw in text.lower() for kw in keywords):
+            sentences = re.split(r'(?<=[.!?])\s+', text)
+            relevant_sentences = []
+            for i, sentence in enumerate(sentences):
+                if any(kw in sentence.lower() for kw in keywords):
+                    start = max(0, i - context_sentences)
+                    end = min(len(sentences), i + context_sentences + 1)
+                    relevant_sentences.extend(sentences[start:end])
+            relevant_sentences = list(dict.fromkeys(relevant_sentences))
+            chunks = [" ".join(relevant_sentences[i:i + chunk_size]) for i in range(0, len(relevant_sentences), chunk_size)]
+            relevant_pages[page_num + 1] = chunks
+    return relevant_pages
+
+def filter_relevant_chunks(chunks, query, top_k=5, max_seq_length=250, return_indices=False):
+    query_embedding = model.encode(query, convert_to_tensor=True)
+    chunk_embeddings = []
+    for chunk in chunks:
+        chunk_tokens = model.tokenizer.encode(chunk)
+        if len(chunk_tokens) > max_seq_length:
+            segments = [chunk[i:i + max_seq_length] for i in range(0, len(chunk), max_seq_length)]
+        else:
+            segments = [chunk]
+        segment_embeddings = []
+        for segment in segments:
+            segment_embedding = model.encode(segment, convert_to_tensor=True)
+            segment_embeddings.append(segment_embedding)
+        chunk_embedding = torch.mean(torch.stack(segment_embeddings), dim=0)
+        chunk_embeddings.append(chunk_embedding)
+    similarities = util.pytorch_cos_sim(query_embedding, torch.stack(chunk_embeddings))[0]
+    top_indices = similarities.argsort(descending=True)[:top_k]
+    if return_indices:
+        return top_indices
+    else:
+        return [chunks[i] for i in top_indices]
+
+def process_extracted_chunks(pages_with_keywords, query, max_tokens=5000, max_seq_length=250):
+    all_chunks = []
+    page_numbers = []
+    for page_num, chunks in pages_with_keywords.items():
+        all_chunks.extend(chunks)
+        page_numbers.extend([page_num] * len(chunks))
+    top_k = 10
+    while top_k >= 5:
+        relevant_indices = filter_relevant_chunks(all_chunks, query, top_k=top_k, max_seq_length=max_seq_length, return_indices=True)
+        relevant_pages = {}
+        for i in relevant_indices:
+            page_num = page_numbers[i]
+            if page_num not in relevant_pages:
+                relevant_pages[page_num] = []
+            relevant_pages[page_num].append(all_chunks[i])
+        unique_relevant_pages = {}
+        for page_num, chunks in relevant_pages.items():
+            unique_relevant_pages[page_num] = list(set(chunks))
+        combined_text = " ".join([chunk for chunks in unique_relevant_pages.values() for chunk in chunks])
+        total_tokens = count_tokens(combined_text)
+        st.write(f"Total tokens with top_k={top_k}: {total_tokens}")
+        if total_tokens <= max_tokens:
+            return unique_relevant_pages
+        top_k -= 1
+    if top_k < 5:
+        relevant_indices = filter_relevant_chunks(all_chunks, query, top_k=5, max_seq_length=max_seq_length, return_indices=True)
+        relevant_pages = {}
+        for i in relevant_indices:
+            page_num = page_numbers[i]
+            if page_num not in relevant_pages:
+                relevant_pages[page_num] = []
+            relevant_pages[page_num].append(all_chunks[i])
+        unique_relevant_pages = {}
+        for page_num, chunks in relevant_pages.items():
+            unique_relevant_pages[page_num] = list(set(chunks))
+        combined_text = " ".join([chunk for chunks in unique_relevant_pages.values() for chunk in chunks])
+        total_tokens = count_tokens(combined_text)
+        if total_tokens > max_tokens:
+            truncated_chunks = []
+            total_tokens = 0
+            for page_num, chunks in unique_relevant_pages.items():
+                for chunk in chunks:
+                    chunk_tokens = count_tokens(chunk)
+                    if total_tokens + chunk_tokens <= max_tokens:
+                        truncated_chunks.append((page_num, chunk))
+                        total_tokens += chunk_tokens
+                    else:
+                        remaining_tokens = max_tokens - total_tokens
+                        if remaining_tokens > 0:
+                            truncated_chunk = tokenizer.decode(tokenizer.encode(chunk)[:remaining_tokens])
+                            truncated_chunks.append((page_num, truncated_chunk))
+                        break
+            processed_chunks = {}
+            for page_num, chunk in truncated_chunks:
+                if page_num not in processed_chunks:
+                    processed_chunks[page_num] = []
+                processed_chunks[page_num].append(chunk)
+            return processed_chunks
+    return unique_relevant_pages
 
 
+def process_metric(args):
+    """
+    Worker function for multiprocessing.
+    Args:
+        args: A tuple containing (index, row, new_vector_store_id, pdf_content, time_line).
+    """
+    index, row, new_vector_store_id, pdf_content, time_line,pdf_name = args
+    try:
+        # Convert pdf_content (bytes) back to BytesIO
+        pdf_content = io.BytesIO(pdf_content)
+        
+        # Rest of the function logic
+        metric = row['Metric']
+        #description = row['Description']
+        description = row.get('Description','')
+        #metric_id = row['Id']
+        metric_id = row.get('Id','')
+        unit = row['Unit']
 
-vector_store = client.beta.vector_stores.create(name="Support FAQ")
-new_vector_store_id = vector_store.id
+        st.write(f"Processing index: {index}, Metric: {metric}")
 
+        vector_store_files = client2.vector_stores.files.list(
+            vector_store_id=new_vector_store_id
+        )
+        print(f"Vector store files for index {index}: {vector_store_files}")
 
+        chunks_assistant = assistant2(new_vector_store_id, metric)
+        print(f"Created chunks assistant for index {index}")
+
+        chunks = extra_pdf_chunks(chunks_assistant.id)
+        print(f"Extracted chunks for index {index}")
+
+        with open("output2.txt", "w", encoding="utf-8") as file:
+            file.write(chunks)
+        print(f"Saved chunks to output2.txt for index {index}")
+
+        cleaned_text = preprocess_text_file("output2.txt")
+        st.write(f"Preprocessed text for index {index}")
+
+        keyword_assistant = assistant(new_vector_store_id, metric, description)
+        print(f"Created keyword assistant for index {index}")
+
+        keywords = extra_pdf_keywords(keyword_assistant.id, cleaned_text)
+        st.write(f"Extracted keywords for index {index}")
+
+        if pd.isna(description):
+            description = row['Metric']
+        if unit == "#":
+            unit = '#'
+        if unit == 'Text':
+            unit = "Text"
+
+        pages_with_keywords = extract_relevant_pages(pdf_content, keywords, chunk_size=5, context_sentences=2)
+        st.write(f"Extracted relevant pages for index {index}")
+
+        query = f"Given this Metric ({metric}) and unit ({unit}), what's the value over this timeline ({time_line})?"
+        processed_chunks = process_extracted_chunks(pages_with_keywords, query, max_tokens=5000)
+        print(f"Processed chunks for index {index}")
+
+        dict_str = json.dumps(processed_chunks)
+        print(f"Processed chunks as JSON for index {index}")
+
+        if processed_chunks:
+            send_metric(metric, unit, description, time_line, dict_str, keywords, metric_id,pdf_name)
+            time.sleep(1)
+        else:
+            text = "No matching keywords found in the document."
+            send_metric(metric, unit, description, time_line, text, keywords, metric_id,pdf_name)
+
+        return index, dict_str, keywords
+    except Exception as e:
+        print(f"Error in process_metric for index {index}: {e}")
+        return index, None, None
+
+# Streamlit UI
+st.title("📑 AI-Powered Data Extraction V2")
+st.sidebar.header("Upload and Extract Data")
 st.sidebar.header("Input Metric and Unit")
-metric_unit = st.sidebar.file_uploader("Upload Metrics Unit", type="csv")
 time_line = st.sidebar.text_input("Enter the timeline. E.g 2023")
+uploaded_csv = st.sidebar.file_uploader("Upload a CSV file", type=["csv"])
 uploaded_file = st.sidebar.file_uploader("Upload a PDF file", type="pdf")
-
-
 execute_button = st.sidebar.button("Execute")
 
-overall_rows = [] 
-
-
-
-if execute_button and uploaded_file and metric_unit:
+if uploaded_file and execute_button and uploaded_csv:
     if uploaded_file is not None:
-        metric_df = pd.read_csv(metric_unit)
-    # Save the uploaded file to a temporary location
-        with open("temp.pdf", "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        # Upload the file to OpenAI
-        file_id = upload_file_to_openai("temp.pdf")
-        if file_id:
-            upload_file_vector(file_id)
-
-    progress_bar = st.progress(0)
-    total_rows = len(metric_df)
-    
-    for index, row in metric_df.iterrows():
-        
-        print(row["Metric"])
-        metric = f"**{str(row['Metric'])}**"
-        unit = f"**{str(row["Unit"])}**"
-        print(f"Metric: {metric}, Unit {unit}")
-        user_prompt = f"Analyze {uploaded_file.name} and extract the {metric} value (in {unit}) over {time_line}."
-        assistant = assistant_1(new_vector_store_id, metric, unit,time_line)
-
-        json_data = None
-        while json_data is None:
-            response = chatgpt_assistant(user_prompt, assistant.id)
-            json_data = extract_json_from_output(response)
-            if json_data is None:
-                print("Retrying... JSON data is None")
-                print(response)
-                time.sleep(2)  # Adding a short delay before retrying
-        #st.write(json_data)
-
-        value = json_data["metrics_table"][0]["Value"]
-        metric = json_data["metrics_table"][0]["Metric"]
-        unit = json_data["metrics_table"][0]["Unit"]
-
-        if value != "":
-            assistant2 = assistant_4(new_vector_store_id,metric,unit,value,time_line)
-
-            user_prompt2 = f"Analyse the document, extract the context of {metric}, {value} and {unit}"
-
-            json_data2 = None
-            while json_data2 is None:
-                response2 = chatgpt_assistant(user_prompt2, assistant2.id)
-                json_data2 = extract_json_from_output(response2)
-                if json_data2 is None:
-                    print("Retrying JSON2... JSON data is None")
-                    print(response2)
-                    time.sleep(2)  # Adding a short delay before retrying
-                #st.write(json_data2)
-
-            context = json_data2["context_table"][0]["Context"]
-
-            assistant3 = assistant_5(new_vector_store_id,metric,unit,value,context)
-            user_prompt3 = f" Identify the exact page number where this information appears in the document:  {metric}, {value},{unit} and {context}"
-
-            json_data3 = None
-            while json_data3 is None:
-                response3 = chatgpt_assistant(user_prompt3, assistant3.id)
-                json_data3 = extract_json_from_output(response3)
-                if json_data3 is None:
-                    print("Retrying JSON3... JSON data is None")
-                    print(response3)
-                    time.sleep(2) 
-            #st.write(json_data3)
-
-            page = json_data3["page_table"][0]["Page Number(s)"]
-            cf_score = json_data3["page_table"][0]["Confidence Score"]
+        # Read the PDF content once and store it in memory as bytes
+        pdf_content = uploaded_file.read()  # This is a bytes object
+        pdf_name = uploaded_file.name
+        uploaded_file.seek(0)
+        if not pdf_content:
+            st.error("Uploaded file is empty. Please upload a valid PDF.")
+        elif not pdf_content.startswith(b"%PDF"):
+            st.error("Invalid PDF file. Please upload a proper PDF.")
+        else:
+            df = pd.read_csv(uploaded_csv)
+            df = df
+            stripped_text = preprocess_text(io.BytesIO(pdf_content))  # Create a BytesIO object for preprocessing
+            with open("output.txt", "w", encoding="utf-8") as file:
+                file.write(stripped_text)
+            print("Preprocessed text saved to 'output.txt'.")
+            vector_store = client2.vector_stores.create(name="Support FAQ")
+            new_vector_store_id = vector_store.id
+            try:
+                response = client2.files.create(
+                    file=open("output.txt", "rb"),
+                    purpose="assistants"
+                )
+                st.status("File uploaded successfully!")
+                print("File ID:", response.id)
+                print("File Details:", response)
+            except Exception as e:
+                print("An error occurred while uploading the file:", e)
+            client2.vector_stores.files.create(
+                vector_store_id=new_vector_store_id,
+                file_id=response.id
+            )
             
-        elif value == "":
-            value = "Not Found"
-            context = "N/A"
-            page = "N/A"
-            cf_score = "N/A"
 
-        overall_rows.append({
-                    "Metric": metric,
-                    "Value": value,
-                    "Unit": unit,
-                    "Page Number(s)": page,
-                    "Context": context,
-                    "Confidence Score": cf_score
-                })
-        progress_bar.progress((index + 1) / total_rows)
+            # Prepare arguments for multiprocessing
+            args_list = [
+                (index, row, new_vector_store_id, pdf_content, time_line,pdf_name)
+                for index, row in df.iterrows()
+            ]
 
-        # Create a pandas DataFrame from the collected rows
-    overall_df = pd.DataFrame(overall_rows)
-    st.write("Overall DataFrame:")
-    st.write(overall_df)
-    #print(overall_df)
+            # Use multiprocessing.Pool
+            with multiprocessing.Pool(processes=3) as pool:
+                results = pool.map(process_metric, args_list)
 
-
-
-
-        
-
-
+            # Display results in Streamlit
+            all_success = True
+            
+            for index, dict_str, keywords in results:
+                if dict_str is not None:
+                    st.status(f"Processed: {index}")
+                     
+                    
+                    #st.write(dict_str)
+                    #st.write(keywords)
+                else:
+                    st.error(f"Failed to process index {index}")#
+                    all_success = False
+            
+            if all_success:
+                st.success("🎉 All metrics have been processed successfully!")
+            else:
+                st.warning("⚠️ Some metrics failed to process. Please review the errors above.")
