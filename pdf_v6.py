@@ -410,7 +410,7 @@ if uploaded_file and execute_button and uploaded_csv:
                     file=open("output.txt", "rb"),
                     purpose="assistants"
                 )
-                st.status("File uploaded successfully!")
+                st.write("File uploaded successfully!")
                 print("File ID:", response.id)
                 print("File Details:", response)
             except Exception as e:
@@ -436,7 +436,7 @@ if uploaded_file and execute_button and uploaded_csv:
             
             for index, dict_str, keywords in results:
                 if dict_str is not None:
-                    st.status(f"Processed: {index}")
+                    st.write(f"Processed: {index}")
                      
                     
                     #st.write(dict_str)
