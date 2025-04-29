@@ -430,8 +430,9 @@ if uploaded_file and execute_button and uploaded_csv:
 
             # Use multiprocessing.Pool
             print("hello")
-            with multiprocessing.Pool(processes=3) as pool:
-                results = pool.map(process_metric, args_list)
+            with st.spinner("Processing metrics..."):
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                    results = list(executor.map(process_metric, args_list))
 
             # Display results in Streamlit
             all_success = True
