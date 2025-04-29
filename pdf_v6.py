@@ -115,7 +115,7 @@ def extra_pdf_keywords(assistant_id, text):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def assistant2(clien2_local,vector_id, metric):
+def assistant2(client2_local,vector_id, metric):
     instructions = f"""Extract all the chunks of text within the document in large paragraphs (512 seq length) that best answer the specified metric.:  
     Metric: {metric}
     OUTPUT FORMAT: Return results as a valid array of strings, with each paragraph as a separate element:
