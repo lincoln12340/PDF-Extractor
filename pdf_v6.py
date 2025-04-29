@@ -309,6 +309,7 @@ def process_metric(args):
     Args:
         args: A tuple containing (index, row, new_vector_store_id, pdf_content, time_line).
     """
+    print("im jhere")
     index, row, new_vector_store_id, pdf_content, time_line,pdf_name = args
     try:
         # Convert pdf_content (bytes) back to BytesIO
