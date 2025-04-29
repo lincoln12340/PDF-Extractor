@@ -73,23 +73,23 @@ def preprocess_text(pdf_file):
     filtered_words = [word for word in words if word.lower() not in stop_words and word.isalpha()]
     return " ".join(filtered_words)
 
-def extra_pdf_chunks(assistant_id):
+def extra_pdf_chunks(client2_local,assistant_id):
     text = f"Extract all relevant paragraphs"
     try:
-        thread = client2.beta.threads.create()
+        thread = client2_local.beta.threads.create()
         thread_id = thread.id
-        client2.beta.threads.messages.create(thread_id=thread_id, role="user", content=text)
-        run = client2.beta.threads.runs.create(
+        client2_local.beta.threads.messages.create(thread_id=thread_id, role="user", content=text)
+        run = client2_local.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=assistant_id,
             temperature=1
         )
         while True:
-            run_status = client2.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            run_status = client2_local.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
             if run_status.status == "completed":
                 break
             time.sleep(2)
-        messages = client2.beta.threads.messages.list(thread_id=thread_id)
+        messages = client2_local.beta.threads.messages.list(thread_id=thread_id)
         return messages.data[0].content[0].text.value.strip()
     except Exception as e:
         return f"Error: {str(e)}"
@@ -97,20 +97,20 @@ def extra_pdf_chunks(assistant_id):
 def extra_pdf_keywords(assistant_id, text):
     text = f"Analyse the text and extract the relevant keywords: {text}"
     try:
-        thread = client2.beta.threads.create()
+        thread = client2_local.beta.threads.create()
         thread_id = thread.id
-        client2.beta.threads.messages.create(thread_id=thread_id, role="user", content=text)
-        run = client2.beta.threads.runs.create(
+        client2_local.beta.threads.messages.create(thread_id=thread_id, role="user", content=text)
+        run = client2_local.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=assistant_id,
             temperature=1
         )
         while True:
-            run_status = client2.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            run_status = client2_local.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
             if run_status.status == "completed":
                 break
             time.sleep(2)
-        messages = client2.beta.threads.messages.list(thread_id=thread_id)
+        messages = client2_local.beta.threads.messages.list(thread_id=thread_id)
         return messages.data[0].content[0].text.value.strip()
     except Exception as e:
         return f"Error: {str(e)}"
@@ -348,7 +348,7 @@ def process_metric(args):
         keyword_assistant = assistant(client2_local,new_vector_store_id, metric, description)
         print(f"Created keyword assistant for index {index}")
 
-        keywords = extra_pdf_keywords(keyword_assistant.id, cleaned_text)
+        keywords = extra_pdf_keywords(client2_local,keyword_assistant.id, cleaned_text)
         st.write(f"Extracted keywords for index {index}")
 
         if pd.isna(description):
