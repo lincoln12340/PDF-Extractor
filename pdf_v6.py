@@ -19,7 +19,7 @@ import concurrent.futures
 
 # Download NLTK data
 nltk.download('punkt')
-nltk.download('stopwords')
+nltk.download('stopwords',force = True)
 nltk.download('punkt_tab')
 
 # Initialize tokenizer and model once
@@ -37,14 +37,22 @@ def preprocess_text_file(txt_file):
     with open(txt_file, "r", encoding="utf-8") as file:
         text = file.read()
     words = word_tokenize(text)
-    stop_words = set(stopwords.words("english"))
+    try:
+        stop_words = set(stopwords.words('english'))
+    except AttributeError:
+        nltk.download('stopwords', force=True)
+        stop_words = set(stopwords.words('english'))
     return " ".join([word for word in words if word.lower() not in stop_words and word.isalpha()])
 
 def preprocess_text(pdf_file):
     doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
     text = "".join([page.get_text() for page in doc])
     words = word_tokenize(text)
-    stop_words = set(stopwords.words('english'))
+    try:
+        stop_words = set(stopwords.words('english'))
+    except AttributeError:
+        nltk.download('stopwords', force=True)
+        stop_words = set(stopwords.words('english'))
     return " ".join([word for word in words if word.lower() not in stop_words and word.isalpha()])
 
 def extra_pdf_chunks(client2_local, assistant_id):
