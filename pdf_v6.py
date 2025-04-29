@@ -419,7 +419,7 @@ if uploaded_file and execute_button and uploaded_csv:
                 vector_store_id=new_vector_store_id,
                 file_id=response.id
             )
-            print("Before Processing)
+            print("Before Processing")
 
             # Prepare arguments for multiprocessing
             args_list = [
@@ -428,7 +428,7 @@ if uploaded_file and execute_button and uploaded_csv:
             ]
 
             # Use multiprocessing.Pool
-            print("hello)
+            print("hello")
             with multiprocessing.Pool(processes=3) as pool:
                 results = pool.map(process_metric, args_list)
 
