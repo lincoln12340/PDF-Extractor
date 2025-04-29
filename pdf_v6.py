@@ -170,20 +170,25 @@ def process_metric(args):
     index, row, pdf_content_bytes, time_line, pdf_name = args
 
     try:
-        print(f"Thread starting for index {index}")
+        print(f"\n📌 [Index {index}] Starting process...")
         client2_local = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
         pdf_content = io.BytesIO(pdf_content_bytes)
 
         # Step 1: Preprocess and upload
+        print(f"🔍 [Index {index}] Preprocessing PDF...")
         stripped_text = preprocess_text(io.BytesIO(pdf_content_bytes))
+        
         temp_text_filename = f"temp_text_{index}.txt"
         with open(temp_text_filename, "w", encoding="utf-8") as file:
             file.write(stripped_text)
+        print(f"✅ [Index {index}] Text extracted and saved to {temp_text_filename}")
 
+        print(f"📤 [Index {index}] Uploading file to OpenAI...")
         uploaded_file = client2_local.files.create(file=open(temp_text_filename, "rb"), purpose="assistants")
         vector_store = client2_local.vector_stores.create(name=f"MetricVectorStore_{index}")
         vector_store_id = vector_store.id
         client2_local.vector_stores.files.create(vector_store_id=vector_store_id, file_id=uploaded_file.id)
+        print(f"✅ [Index {index}] File uploaded and linked to vector store {vector_store_id}")
 
         # Step 2: Assistants
         metric = row['Metric']
@@ -191,28 +196,43 @@ def process_metric(args):
         description = row.get('Description', '')
         metric_id = row.get('Id', '')
 
+        print(f"🧠 [Index {index}] Creating assistant for chunks...")
         chunks_assistant = assistant2(client2_local, vector_store_id, metric)
+
+        print(f"🔎 [Index {index}] Extracting chunks...")
         chunks = extra_pdf_chunks(client2_local, chunks_assistant.id)
         output_file_name = f"output2_{index}.txt"
         with open(output_file_name, "w", encoding="utf-8") as file:
             file.write(chunks)
+        print(f"✅ [Index {index}] Chunks saved to {output_file_name}")
 
+        print(f"🧹 [Index {index}] Cleaning extracted chunks...")
         cleaned_text = preprocess_text_file(output_file_name)
+
+        print(f"🧠 [Index {index}] Creating assistant for keywords...")
         keyword_assistant = assistant(client2_local, vector_store_id, metric, description)
+
+        print(f"🔍 [Index {index}] Extracting keywords...")
         keywords = extra_pdf_keywords(client2_local, keyword_assistant.id, cleaned_text)
+        print(f"✅ [Index {index}] Keywords extracted: {keywords}")
 
         # Step 3: Process extracted pages
+        print(f"📄 [Index {index}] Extracting relevant PDF pages...")
         pages_with_keywords = extract_relevant_pages(pdf_content, keywords, chunk_size=5, context_sentences=2)
+
         query = f"Metric: {metric}, Unit: {unit}, Timeline: {time_line}"
+        print(f"🧠 [Index {index}] Filtering relevant chunks based on query: {query}")
         processed_chunks = process_extracted_chunks(pages_with_keywords, query, max_tokens=5000)
 
         dict_str = json.dumps(processed_chunks) if processed_chunks else "No matching chunks"
+        print(f"📬 [Index {index}] Sending data to webhook...")
         send_metric(metric, unit, description, time_line, dict_str, keywords, metric_id, pdf_name)
+        print(f"✅ [Index {index}] Completed!\n")
 
         return index, dict_str, keywords
 
     except Exception as e:
-        print(f"Error in process_metric for index {index}: {e}")
+        print(f"❌ Error in process_metric for index {index}: {e}")
         return index, None, None
 
 # --- Streamlit App ---
