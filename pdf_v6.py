@@ -335,12 +335,13 @@ def process_metric(args):
 
         chunks = extra_pdf_chunks(chunks_assistant.id)
         print(f"Extracted chunks for index {index}")
-
-        with open("output2.txt", "w", encoding="utf-8") as file:
+        
+        output_file_name = f"output2_{index}.txt"
+        with open(output_file_name, "w", encoding="utf-8") as file:
             file.write(chunks)
         print(f"Saved chunks to output2.txt for index {index}")
 
-        cleaned_text = preprocess_text_file("output2.txt")
+        cleaned_text = preprocess_text_file(output_file_name)
         st.write(f"Preprocessed text for index {index}")
 
         keyword_assistant = assistant(new_vector_store_id, metric, description)
