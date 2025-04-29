@@ -30,7 +30,7 @@ api_key = st.secrets["OPENAI_API_KEY"]
 
 client2 = OpenAI(api_key= api_key)
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir="/tmp/gpt2")
+tokenizer = GPT2Tokenizer.from_pretrained("./models/gpt2")
 
 # Load a pre-trained sentence-transformers model for filtering
 model = SentenceTransformer('all-MiniLM-L6-v2')
