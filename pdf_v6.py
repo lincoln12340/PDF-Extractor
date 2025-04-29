@@ -20,6 +20,7 @@ import concurrent.futures
 # Download NLTK data
 nltk.download('punkt')
 nltk.download('stopwords')
+nltk.download('punkt_tab')
 
 # Initialize tokenizer and model once
 tokenizer = GPT2Tokenizer.from_pretrained("./models/gpt2")
