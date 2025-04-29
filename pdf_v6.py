@@ -249,6 +249,7 @@ if uploaded_pdf and uploaded_csv and execute_button:
     pdf_name = uploaded_pdf.name
 
     df = pd.read_csv(uploaded_csv)
+    print("hello")
 
     args_list = [(index, row, pdf_content_bytes, time_line, pdf_name) for index, row in df.iterrows()]
 
