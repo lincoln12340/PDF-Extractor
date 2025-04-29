@@ -115,13 +115,13 @@ def extra_pdf_keywords(assistant_id, text):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def assistant2(vector_id, metric):
+def assistant2(clien2_local,vector_id, metric):
     instructions = f"""Extract all the chunks of text within the document in large paragraphs (512 seq length) that best answer the specified metric.:  
     Metric: {metric}
     OUTPUT FORMAT: Return results as a valid array of strings, with each paragraph as a separate element:
     "paragraph1", "paragraph2", "paragraph3", ...
     Think broadly about this topic to capture all relevant information, always return information"""
-    assistant2 = client2.beta.assistants.create(
+    assistant2 = client2_local.beta.assistants.create(
         name="Metric Extraction Assistant",
         instructions=instructions,
         temperature=2,
@@ -132,7 +132,7 @@ def assistant2(vector_id, metric):
     )
     return assistant2
 
-def assistant(vector_id, metric, description):
+def assistant(client2_local,vector_id, metric, description):
     instructions = f""" 
     ESG SPECIALIST KEYWORD EXTRACTION SYSTEM INSTRUCTION
     As an ESG specialist, analyze only the provided text to generate comprehensive keyword lists for data extraction of the specified metric along with its description, following these strict guidelines:
@@ -158,7 +158,7 @@ def assistant(vector_id, metric, description):
     * Verify exact spelling and formatting matches the source text
     CRITICAL: Extract keywords ONLY from the text provided for analysis. Do not introduce words based on external knowledge or variations not present in the text. Remove ALL sources from the output.
     """
-    assistant1 = client2.beta.assistants.create(
+    assistant1 = client2_local.beta.assistants.create(
         name="Metric Extraction Assistant",
         instructions=instructions,
         model="gpt-4.5-preview-2025-02-27",
@@ -311,6 +311,7 @@ def process_metric(args):
     """
     print("im jhere")
     index, row, new_vector_store_id, pdf_content, time_line,pdf_name = args
+    client2_local = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     try:
         # Convert pdf_content (bytes) back to BytesIO
         pdf_content = io.BytesIO(pdf_content)
@@ -325,12 +326,12 @@ def process_metric(args):
 
         st.write(f"Processing index: {index}, Metric: {metric}")
 
-        vector_store_files = client2.vector_stores.files.list(
+        vector_store_files = client2_local.vector_stores.files.list(
             vector_store_id=new_vector_store_id
         )
         print(f"Vector store files for index {index}: {vector_store_files}")
 
-        chunks_assistant = assistant2(new_vector_store_id, metric)
+        chunks_assistant = assistant2(client2_local,new_vector_store_id, metric)
         print(f"Created chunks assistant for index {index}")
 
         chunks = extra_pdf_chunks(chunks_assistant.id)
@@ -344,7 +345,7 @@ def process_metric(args):
         cleaned_text = preprocess_text_file(output_file_name)
         st.write(f"Preprocessed text for index {index}")
 
-        keyword_assistant = assistant(new_vector_store_id, metric, description)
+        keyword_assistant = assistant(client2_local,new_vector_store_id, metric, description)
         print(f"Created keyword assistant for index {index}")
 
         keywords = extra_pdf_keywords(keyword_assistant.id, cleaned_text)
