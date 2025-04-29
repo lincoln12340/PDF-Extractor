@@ -334,7 +334,7 @@ def process_metric(args):
         chunks_assistant = assistant2(client2_local,new_vector_store_id, metric)
         print(f"Created chunks assistant for index {index}")
 
-        chunks = extra_pdf_chunks(chunks_assistant.id)
+        chunks = extra_pdf_chunks(client2_local,chunks_assistant.id)
         print(f"Extracted chunks for index {index}")
         
         output_file_name = f"output2_{index}.txt"
