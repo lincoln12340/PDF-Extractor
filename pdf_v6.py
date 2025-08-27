@@ -98,7 +98,7 @@ def assistant2(client2_local, vector_id, metric):
         instructions=instructions,
         temperature=2,
         top_p=0.33,
-        model="gpt-4o",
+        model="gpt-4.1",
         tools=[{"type": "file_search"}],
         tool_resources={"file_search": {"vector_store_ids": [vector_id]}},
     )
@@ -112,7 +112,7 @@ def assistant(client2_local, vector_id, metric, description):
     return client2_local.beta.assistants.create(
         name="Keyword Extractor",
         instructions=instructions,
-        model="gpt-4.5-preview-2025-02-27",
+        model="gpt-4.1",
         tools=[{"type": "file_search"}],
         tool_resources={"file_search": {"vector_store_ids": [vector_id]}},
     )
