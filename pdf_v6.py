@@ -244,7 +244,7 @@ def process_metric(args):
         return index, None, None
 
 # --- Streamlit App ---
-st.title("📑 AI-Powered Data Extraction")
+st.title("📑 Treety Data Extraction")
 st.sidebar.header("Upload and Configure")
 
 time_line = st.sidebar.text_input("Timeline (e.g., 2023)")
